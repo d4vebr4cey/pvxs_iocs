@@ -378,7 +378,7 @@
   }
 
   async function open_from_file() {
-    if ('showOpenFilePicker' in window) {
+    if ('showOpenFilePicker' in self) {
       const [handles] = await window.showOpenFilePicker();
       const file = await handles[0].getFile();
       const xmlstr = await file_to_string(file);
@@ -392,7 +392,7 @@
 
   async function save_to_file() {
     const xmlstr = page_to_xml_string();
-    if ('showSaveFilePicker' in window) {
+    if ('showSaveFilePicker' in self) {
       const handle = await window.showSaveFilePicker();
       const writable = await handle.createWritable();
       await writable.write(xmlstr);
