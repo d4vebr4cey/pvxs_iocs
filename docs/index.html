@@ -1,0 +1,603 @@
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GRAFE Configuration Editor</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background-color: #f9f9f9;
+    }
+    .front-end,
+    .process,
+    .device,
+    .status,
+    .status-bit,
+    .control,
+    .control-bit {
+      margin: 10px 0;
+      padding: 10px;
+      background-color: #f2f2f2;
+      border: 1px solid #bbb;
+      border-radius: 4px;
+    }
+    .front-end-inputs {
+      display: grid;
+      grid-template-columns: 100px auto;
+      align-items: center;
+      row-gap: 2px;
+      padding: 10px 0;
+    }
+    .process-inputs,
+    .redis-inputs,
+    .grpc-inputs,
+    .clock-inputs,
+    .control-inputs,
+    .status-inputs {
+      display: grid;
+      grid-template-columns: 100px auto;
+      align-items: center;
+      row-gap: 2px;
+    }
+    .device-inputs {
+      display: grid;
+      grid-template-columns: 120px auto;
+      align-items: center;
+      row-gap: 2px;
+      padding: 10px 0;
+    }
+    .bit {
+      padding: 10px 0;
+    }
+    input {
+      font-size: 14px;
+      padding: 4px;
+      margin-right: 8px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      width: 200px;
+    }
+    details > summary {
+      padding: 4px;
+    }
+    details > *:not(summary) {
+      margin-left: 1.3em;
+    }
+    button {
+      padding: 6px 12px;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-right: 5px;
+    }
+    .btn-add {
+      background-color: #5b5;
+    }
+    .btn-add:hover {
+      background-color: #494;
+    }
+    .btn-gen {
+      background-color: #57d;
+    }
+    .btn-gen:hover {
+      background-color: #45b;
+    }
+    .btn-del {
+      background-color: #d55;
+      float: right;
+      padding: 4px 6px;
+    }
+    .btn-del:hover {
+      background-color: #b44;
+    }
+  </style>
+</head>
+
+<body onload="add_front_end()">
+  <h2>GRAFE Configuration Editor</h2>
+  <div class="front-end" ondrop="xml_file_drop(event)" ondragover="event.preventDefault()">
+    <div>
+      <button class="btn-gen" onclick="open_from_file()">Open From File</button>
+      <button class="btn-gen" onclick="save_to_file()">Save To File</button>
+      <button class="btn-gen" onclick="paste_from_clipboard()">Paste From Clipboard</button>
+      <button class="btn-gen" onclick="copy_to_clipboard()">Copy To Clipboard</button>
+    </div>
+    <div class="front-end-inputs"></div>
+    <div>
+      <button class="btn-add" onclick="add_process()">Add Process</button>
+    </div>
+  </div>
+</body>
+
+<script>
+  const EMPTY_MAP = new Map();
+
+  function add_front_end(vals = EMPTY_MAP) {
+    const description = vals.get('Description') ?? "GRAFE Front-End";
+    const machine     = vals.get('Machine')     ?? "";
+    const component   = vals.get('Component')   ?? "None";
+    const department  = vals.get('Department')  ?? "Instrumentation";
+    const maintainer  = vals.get('Maintainer')  ?? "";
+    const node        = vals.get('Node')        ?? "";
+    const aamask      = vals.get('AAMask')      ?? "MCR+MCRCrewChief";
+
+    document.querySelector(".front-end-inputs").innerHTML = `
+      Description:  <input type="text" id="Description" value="${description}" style="width: auto" />
+      Machine:      <input type="text" id="Machine"     value="${machine}" />
+      Component:    <input type="text" id="Component"   value="${component}" />
+      Department:   <input type="text" id="Department"  value="${department}" />
+      Maintainer:   <input type="text" id="Maintainer"  value="${maintainer}" />
+      Node:         <input type="text" id="Node"        value="${node}" />
+      AAMask:       <input type="text" id="AAMask"      value="${aamask}" />`;
+  }
+
+  function add_process(vals = EMPTY_MAP) {
+    let process_id = vals.get('ProcessID') ?? -1;
+    if (process_id < 0) {
+      let processes = document.querySelectorAll(".process");
+      process_id = processes.length ? parseInt(processes[processes.length - 1].id.slice(1)) + 1 : 16;
+    }
+    const pid = 'P' + process_id;
+    const base_key          = vals.get('BaseKey')           ?? "";
+    const redis_address     = vals.get('RedisAddress')      ?? "";
+    const redis_port        = vals.get('RedisPort')         ?? "";
+    const redis_watchdog    = vals.get('RedisWatchdog')     ?? "front-end-" + process_id;
+    const redis_connections = vals.get('RedisConnections')  ?? "";
+    const redis_readers     = vals.get('RedisReaders')      ?? "";
+    const redis_workers     = vals.get('RedisWorkers')      ?? "";
+    const grpc_address      = vals.get('GRPCAddress')       ?? "";
+    const grpc_port         = vals.get('GRPCPort')          ?? "";
+    const clock_address     = vals.get('ClockAddress')      ?? "";
+    const clock_port        = vals.get('ClockPort')         ?? "";
+
+    const process_html = `
+      <div class="process" id="${pid}">
+        <button class="btn-del" onclick="document.getElementById('${pid}').remove()">X</button>
+        <details>
+          <summary>Process ${process_id}</summary>
+          <div class="process-inputs">
+            <input type="hidden" id="ProcessID" value="${process_id}" />
+            Base Key: <input type="text" id="BaseKey">${base_key}</input>
+          </div>
+          <details>
+            <summary>Redis</summary>
+            <div class="redis-inputs">
+              Address:      <input type="text" id="Address"     value="${redis_address}" />
+              Port:         <input type="text" id="Port"        value="${redis_port}" />
+              Watchdog:     <input type="text" id="Watchdog"    value="${redis_watchdog}" />
+              Connections:  <input type="text" id="Connections" value="${redis_connections}" />
+              Readers:      <input type="text" id="Readers"     value="${redis_readers}" />
+              Workers:      <input type="text" id="Workers"     value="${redis_workers}" />
+            </div>
+          </details>
+          <details>
+            <summary>GRPC</summary>
+            <div class="grpc-inputs">
+              Address:  <input type="text" id="Address" value="${grpc_address}" />
+              Port:     <input type="text" id="Port"    value="${grpc_port}" />
+            </div>
+          </details>
+          <details>
+            <summary>Clock</summary>
+            <div class="clock-inputs">
+              Address: <input type="text" id="Address"  value="${clock_address}" />
+              Port:    <input type="text" id="Port"     value="${clock_port}" />
+            </div>
+          </details>
+          <div style="padding-top: 10px">
+            <button class="btn-add" onclick="add_device('${pid}')">Add Device</button>
+          </div>
+        </details>
+      </div>`;
+    document.body.insertAdjacentHTML("beforeend", process_html);
+  }
+
+  function add_device(pid, vals = EMPTY_MAP) {
+    let process = document.getElementById(pid);
+
+    let attribute = vals.get('Attribute') ?? -1;
+    if (attribute < 0) {
+      let devices = process.querySelectorAll(".device");
+      attribute = devices.length ? parseInt(devices[devices.length - 1].id.slice(1)) + 1 : 0;
+    }
+    const did = 'D' + attribute;
+    const name          = vals.get('Name')          ?? "";
+    const description   = vals.get('Description')   ?? "GRAFE Device";
+    const type          = vals.get('Type')          ?? "";
+    const read_key      = vals.get('ReadKey')       ?? "";
+    const write_key     = vals.get('WriteKey')      ?? "";
+    const count         = vals.get('Count')         ?? "1";
+    const omsp          = vals.get('OMSP')          ?? "0";
+    const primary_units = vals.get('PrimaryUnits')  ?? "    ";
+    const common_units  = vals.get('CommonUnits')   ?? "    ";
+    const multiplier    = vals.get('Multiplier')    ?? "1";
+    const divisor       = vals.get('Divisor')       ?? "1";
+    const offset        = vals.get('Offset')        ?? "0";
+    const logging       = vals.get('Logging')       ?? "0";
+    const save_list     = vals.get('SaveList')      ?? "0";
+    const source_freq   = vals.get('SourceFreq')    ?? "";
+    const ftp_max_freq  = vals.get('FTPMaxFreq')    ?? "1440";
+    const snp_max_freq  = vals.get('SNPMaxFreq')    ?? "10000";
+    const trailing_time = vals.get('TrailingTime')  ?? "0";
+
+    const device_html = `
+      <div class="device" id="${did}">
+        <button class="btn-del" onclick="remove_device('${pid}','${did}')">X</button>
+        <details>
+          <summary>Device ${attribute}</summary>
+          <div class="device-inputs">
+            <input type="hidden" id="Attribute" value="${attribute}" />
+            Name:           <input type="text" id="Name"          value="${name}" />
+            Description:    <input type="text" id="Description"   value="${description}" style="width: auto" />
+            Type:           <input type="text" id="Type"          value="${type}" />
+            Read Key:       <input type="text" id="ReadKey"       value="${read_key}" />
+            Write Key:      <input type="text" id="WriteKey"      value="${write_key}" />
+            Count:          <input type="text" id="Count"         value="${count}" />
+            OMSP:           <input type="text" id="OMSP"          value="${omsp}" />
+            Primary Units:  <input type="text" id="PrimaryUnits"  value="${primary_units}" />
+            Common Units:   <input type="text" id="CommonUnits"   value="${common_units}" />
+            Multiplier:     <input type="text" id="Multiplier"    value="${multiplier}" />
+            Divisor:        <input type="text" id="Divisor"       value="${divisor}" />
+            Offset:         <input type="text" id="Offset"        value="${offset}" />
+            Logging:        <input type="text" id="Logging"       value="${logging}" />
+            SaveList:       <input type="text" id="SaveList"      value="${save_list}" />
+            Source Freq:    <input type="text" id="SourceFreq"    value="${source_freq}" />
+            FTP Max Freq:   <input type="text" id="FTPMaxFreq"    value="${ftp_max_freq}" />
+            SNP Max Freq:   <input type="text" id="SNPMaxFreq"    value="${snp_max_freq}" />
+            Trailing Time:  <input type="text" id="TrailingTime"  value="${trailing_time}" />
+          </div>
+          <details class="status">
+            <summary>Status</summary>
+            <div style="padding-top: 10px">
+              <button class="btn-add" onclick="add_status_bit('${pid}','${did}')">Add Bit</button>
+            </div>
+          </details>
+          <details class="control">
+            <summary>Control</summary>
+            <div style="padding-top: 10px">
+              <button class="btn-add" onclick="add_control_bit('${pid}','${did}')">Add Bit</button>
+            </div>
+          </details>
+        </details>
+      </div>`;
+    process.insertAdjacentHTML("beforeend", device_html);
+  }
+
+  function remove_device(pid, did) {
+    let process = document.getElementById(pid);
+    let device = process.querySelector("#" + did);
+    device.remove();
+  }
+
+  function add_status_bit(pid, did, vals = EMPTY_MAP) {
+    let process = document.getElementById(pid);
+    let device = process.querySelector('#' + did);
+    let status = device.querySelector(".status");
+
+    let bit_number = vals.get('BitNumber') ?? -1;
+    if (bit_number < 0) {
+      let bits = process.querySelectorAll(".status-bit");
+      bit_number = bits.length ? parseInt(bits[bits.length - 1].id.slice(1)) + 1 : 0;
+    }
+    const bid = 'B' + bit_number;
+    const name = vals.get('Name')               ?? "";
+    const description = vals.get('Description') ?? "";
+    const true_text   = vals.get('TrueText')    ?? "On";
+    const false_text  = vals.get('FalseText')   ?? "Off";
+
+    const status_html = `
+      <div class="status-bit" id="${bid}">
+        <div class="bit">
+          Bit ${bit_number}
+          <button class="btn-del" onclick="remove_status_bit('${pid}','${did}','${bid}')">X</button>
+        </div>
+        <div class="status-inputs">
+          <input type="hidden" id="BitNumber" value="${bit_number}" />
+          Name:         <input type="text" id="Name"        value="${name}" />
+          Description:  <input type="text" id="Description" value="${description}" style="width: auto" />
+          True text:    <input type="text" id="TrueText"    value="${true_text}" />
+          False Text:   <input type="text" id="FalseText"   value="${false_text}" />
+        </div>
+      </div>`;
+    status.insertAdjacentHTML("beforeend", status_html);
+  }
+
+  function remove_status_bit(pid, did, bid) {
+    let process = document.getElementById(pid);
+    let device = process.querySelector('#' + did);
+    let status = device.querySelector(".status");
+    status.querySelector('#' + bid).remove();
+  }
+
+  function add_control_bit(pid, did, vals = EMPTY_MAP) {
+    let process = document.getElementById(pid);
+    let device = process.querySelector('#' + did);
+    let control = device.querySelector(".control");
+
+    let bit_number = vals.get('BitNumber') ?? -1;
+    if (bit_number < 0) {
+      let bits = process.querySelectorAll(".control-bit");
+      bit_number = bits.length ? parseInt(bits[bits.length - 1].id.slice(1)) + 1 : 0;
+    }
+    const bid = 'B' + bit_number;
+    const name        = vals.get('Name')        ?? "";
+    const description = vals.get('Description') ?? "";
+    const status_name = vals.get('StatusName')  ?? "";
+
+    const control_html = `
+      <div class="control-bit" id="${bid}">
+        <div class="bit">
+          Bit ${bit_number}
+          <button class="btn-del" onclick="remove_control_bit('${pid}','${did}','${bid}')">X</button>
+        </div>
+        <div class="control-inputs">
+          <input type="hidden" id="BitNumber" value="${bit_number}" />
+          Name:         <input type="text" id="Name"        value="${name}" />
+          Description:  <input type="text" id="Description" value="${description}" style="width: auto" />
+          Status Name:  <input type="text" id="StatusName"  value="${status_name}"/>
+        </div>
+      </div>`;
+    control.insertAdjacentHTML("beforeend", control_html);
+  }
+
+  function remove_control_bit(pid, did, bid) {
+    let process = document.getElementById(pid);
+    let device = process.querySelector('#' + did);
+    let control = device.querySelector(".control");
+    control.querySelector('#' + bid).remove();
+  }
+
+  function file_to_string(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => { resolve(reader.result); }
+      reader.readAsText(file);
+    });
+  }
+
+  async function xml_file_drop(event) {
+    event.preventDefault();
+    let file;
+    if (event.dataTransfer.items) {
+      Array.from(event.dataTransfer.items).some((item) => {
+        if (item.kind === "file") {
+          file = item.getAsFile();
+          return true;
+        }
+        return false;
+      });
+    }
+    else if (event.dataTransfer.files) {
+      file = event.dataTransfer.files[0];
+    }
+    const xmlstr = await file_to_string(file);
+    xml_string_to_page(xmlstr);
+  }
+
+  async function open_from_file() {
+    if ('showOpenFilePicker' in window) {
+      const [handles] = await window.showOpenFilePicker();
+      const file = await handles[0].getFile();
+      const xmlstr = await file_to_string(file);
+      xml_string_to_page(xmlstr);
+    }
+    else {
+      alert("Please drag-and-drop file onto this page");
+      console.log("open_from_file");
+    }
+  }
+
+  async function save_to_file() {
+    const xmlstr = page_to_xml_string();
+    if ('showSaveFilePicker' in window) {
+      const handle = await window.showSaveFilePicker();
+      const writable = await handle.createWritable();
+      await writable.write(xmlstr);
+      await writable.close();
+    }
+    else {
+      const a = document.createElement('a');
+      a.setAttribute('href', 'data:application/xml,' + xmlstr);
+      a.setAttribute('download', 'Config.xml');
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+  }
+
+  async function paste_from_clipboard() {
+    const xmlstr = await navigator.clipboard.readText();
+    xml_string_to_page(xmlstr);
+  }
+
+  function copy_to_clipboard() {
+    const xmlstr = page_to_xml_string();
+    navigator.clipboard.writeText(xmlstr);
+  }
+
+  function get_element_by_tag(parent, tagname) {
+    return parent.getElementsByTagName(tagname)[0];
+  }
+
+  function vals_from_elements(parent) {
+    let vals = new Map();
+    Array.from(parent.children).forEach((child) => {
+      vals.set(child.tagName, child.textContent);
+    });
+    return vals;
+  }
+
+  function compare(tagname) {
+    return (a, b) => {
+      const a_txt = get_element_by_tag(a, tagname).textContent;
+      const b_txt = get_element_by_tag(b, tagname).textContent;
+      return a_txt - b_txt;
+    }
+  }
+
+  function xml_string_to_page(xmlstr) {
+    const parser = new DOMParser();
+    const xml = parser.parseFromString(xmlstr, "application/xml");
+
+    const xml_frontend = get_element_by_tag(xml, "FrontEnd");
+    const vals = vals_from_elements(xml_frontend);
+    add_front_end(vals);
+
+    Array.from(document.getElementsByClassName("process")).forEach((dst_proc) => { dst_proc.remove(); });
+
+    let xml_processes = Array.from(xml.getElementsByTagName("Process")).sort(compare("ProcessID"));
+    xml_processes.forEach((xml_process) => {
+      const vals = vals_from_elements(xml_process);
+      add_process(vals);
+
+      const pid = 'P' + get_element_by_tag(xml_process, "ProcessID").textContent;
+
+      const xml_devices = Array.from(xml_process.getElementsByTagName("Device")).sort(compare("Attribute"));
+      xml_devices.forEach((xml_device) => {
+        const vals = vals_from_elements(xml_device);
+        add_device(pid, vals);
+
+        const did = 'D' + get_element_by_tag(xml_device, "Attribute").textContent;
+
+        const xml_status_bits = Array.from(xml_device.getElementsByTagName("Status")).sort(compare("BitNumber"));
+        xml_status_bits.forEach((xml_status_bit) => {
+          const vals = vals_from_elements(xml_status_bit);
+          add_status_bit(pid, did, vals);
+        });
+
+        const xml_control_bits = Array.from(xml_device.getElementsByTagName("Control")).sort(compare("BitNumber"));
+        xml_control_bits.forEach((xml_control_bit) => {
+          const vals = vals_from_elements(xml_control_bit);
+          add_control_bit(pid, did, vals);
+        });
+      });
+    });
+  }
+
+  function create_from_input(xml, par, name, pref = "") {
+    let ele = xml.createElement(pref + name);
+    ele.textContent = par.querySelector(`#${name}`).value;
+    return ele;
+  }
+
+  const XSLT_DOC = new DOMParser().parseFromString(`
+    <xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform">
+      <xsl:strip-space elements="*"/>
+      <xsl:template match="para[content-style][not(text())]">
+        <xsl:value-of select="normalize-space(.)"/>
+      </xsl:template>
+      <xsl:template match="node()|@*">
+        <xsl:copy><xsl:apply-templates select="node()|@*"/></xsl:copy>
+      </xsl:template>
+      <xsl:output indent="yes"/>
+    </xsl:stylesheet>`, 'application/xml');
+
+  function page_to_xml_string() {
+    const xml = document.implementation.createDocument(null, null, null);
+    const hdr = xml.createProcessingInstruction('xml', 'version="1.0" ');
+    xml.insertBefore(hdr, xml.firstChild);
+
+    const src_fe = document.querySelector(".front-end-inputs");
+    const dst_fe = xml.createElement("FrontEnd");
+    xml.appendChild(dst_fe);
+
+    dst_fe.appendChild(create_from_input(xml, src_fe, "Description"));
+    dst_fe.appendChild(create_from_input(xml, src_fe, "Machine"));
+    dst_fe.appendChild(create_from_input(xml, src_fe, "Component"));
+    dst_fe.appendChild(create_from_input(xml, src_fe, "Department"));
+    dst_fe.appendChild(create_from_input(xml, src_fe, "Maintainer"));
+    dst_fe.appendChild(create_from_input(xml, src_fe, "Node"));
+    dst_fe.appendChild(create_from_input(xml, src_fe, "AAMask"));
+
+    const src_procs = Array.from(document.querySelectorAll(".process"));
+    src_procs.forEach((src_proc) => {
+      const dst_proc = xml.createElement("Process");
+      dst_fe.appendChild(dst_proc);
+
+      let src = src_proc.querySelector(".process-inputs");
+      dst_proc.appendChild(create_from_input(xml, src, "ProcessID"));
+      dst_proc.appendChild(create_from_input(xml, src, "BaseKey"));
+
+      src = src_proc.querySelector(".redis-inputs");
+      dst_proc.appendChild(create_from_input(xml, src, "Address", "Redis"));
+      dst_proc.appendChild(create_from_input(xml, src, "Port", "Redis"));
+      dst_proc.appendChild(create_from_input(xml, src, "Watchdog", "Redis"));
+      dst_proc.appendChild(create_from_input(xml, src, "Connections", "Redis"));
+      dst_proc.appendChild(create_from_input(xml, src, "Readers", "Redis"));
+      dst_proc.appendChild(create_from_input(xml, src, "Workers", "Redis"));
+
+      src = src_proc.querySelector(".grpc-inputs");
+      dst_proc.appendChild(create_from_input(xml, src, "Address", "GRPC"));
+      dst_proc.appendChild(create_from_input(xml, src, "Port", "GRPC"));
+
+      src = src_proc.querySelector(".clock-inputs");
+      dst_proc.appendChild(create_from_input(xml, src, "Address", "Clock"));
+      dst_proc.appendChild(create_from_input(xml, src, "Port", "Clock"));
+
+      const src_devs = Array.from(src_proc.querySelectorAll(".device"));
+      src_devs.forEach((src_dev) => {
+        const dst_dev = xml.createElement("Device");
+        dst_proc.appendChild(dst_dev);
+
+        let src = src_dev.querySelector(".device-inputs");
+        dst_dev.appendChild(create_from_input(xml, src, "Attribute"));
+        dst_dev.appendChild(create_from_input(xml, src, "Name"));
+        dst_dev.appendChild(create_from_input(xml, src, "Description"));
+        dst_dev.appendChild(create_from_input(xml, src, "Type"));
+        dst_dev.appendChild(create_from_input(xml, src, "ReadKey"));
+        dst_dev.appendChild(create_from_input(xml, src, "WriteKey"));
+        dst_dev.appendChild(create_from_input(xml, src, "Count"));
+        dst_dev.appendChild(create_from_input(xml, src, "OMSP"));
+        dst_dev.appendChild(create_from_input(xml, src, "PrimaryUnits"));
+        dst_dev.appendChild(create_from_input(xml, src, "CommonUnits"));
+        dst_dev.appendChild(create_from_input(xml, src, "Multiplier"));
+        dst_dev.appendChild(create_from_input(xml, src, "Divisor"));
+        dst_dev.appendChild(create_from_input(xml, src, "Offset"));
+        dst_dev.appendChild(create_from_input(xml, src, "Logging"));
+        dst_dev.appendChild(create_from_input(xml, src, "SaveList"));
+        dst_dev.appendChild(create_from_input(xml, src, "SourceFreq"));
+        dst_dev.appendChild(create_from_input(xml, src, "FTPMaxFreq"));
+        dst_dev.appendChild(create_from_input(xml, src, "SNPMaxFreq"));
+        dst_dev.appendChild(create_from_input(xml, src, "TrailingTime"));
+
+        const src_sbits = Array.from(src_dev.querySelectorAll(".status-bit"));
+        src_sbits.forEach((src_sbit) => {
+          const dst_sbit = xml.createElement("Status");
+          dst_dev.appendChild(dst_sbit);
+
+          let src = src_sbit.querySelector(".status-inputs");
+          dst_sbit.appendChild(create_from_input(xml, src, "BitNumber"));
+          dst_sbit.appendChild(create_from_input(xml, src, "Name"));
+          dst_sbit.appendChild(create_from_input(xml, src, "Description"));
+          dst_sbit.appendChild(create_from_input(xml, src, "TrueText"));
+          dst_sbit.appendChild(create_from_input(xml, src, "FalseText"));
+        });
+
+        const src_cbits = Array.from(src_dev.querySelectorAll(".control-bit"));
+        src_cbits.forEach((src_cbit) => {
+          const dst_cbit = xml.createElement("Control");
+          dst_dev.appendChild(dst_cbit);
+
+          let src = src_cbit.querySelector(".control-inputs");
+          dst_cbit.appendChild(create_from_input(xml, src, "BitNumber"));
+          dst_cbit.appendChild(create_from_input(xml, src, "Name"));
+          dst_cbit.appendChild(create_from_input(xml, src, "Description"));
+          dst_cbit.appendChild(create_from_input(xml, src, "StatusName"));
+        });
+      });
+    });
+
+    const pro = new XSLTProcessor();
+    pro.importStylesheet(XSLT_DOC);
+
+    const pretty = pro.transformToDocument(xml);
+
+    const ser = new XMLSerializer();
+    return ser.serializeToString(pretty) + '\n';
+  }
+</script>
+</html>
